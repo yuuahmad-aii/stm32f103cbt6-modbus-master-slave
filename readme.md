@@ -80,11 +80,11 @@ Master MAX485     Slave MAX485
 
 ```mermaid
 graph TD;
-    A[STATE_IDLE (100ms)] --> B{STATE_SEND_FC05 (Write Coil - Kontrol LED Slave)};
-    B --> C{STATE_WAIT_FC05 (Tunggu balasan: 50ms timeout)};
-    C --> D{STATE_DELAY_FC02 (Jeda 5ms untuk stabilitas)};
-    D --> E{STATE_SEND_FC02 (Read Input - Baca tombol Slave)};
-    E --> F{STATE_WAIT_FC02 (Tunggu balasan: 50ms timeout)};
+    A{STATE_IDLE 100ms} --> B{STATE_SEND_FC05 Write Coil - Kontrol LED Slave};
+    B --> C{"STATE_WAIT_FC05 (Tunggu balasan: 50ms timeout)"};
+    C --> D{"STATE_DELAY_FC02 (Jeda 5ms untuk stabilitas)"};
+    D --> E{"STATE_SEND_FC02 (Read Input - Baca tombol Slave)"};
+    E --> F{"STATE_WAIT_FC02 (Tunggu balasan: 50ms timeout)"};
     F --> A;
 ````
 
@@ -173,11 +173,11 @@ Byte 4-5: CRC-16
 
 ```mermaid
 graph TD;
-    A[STATE_IDLE (100ms)] --> B{Listening untuk frame Modbus};
-    B --> C{Frame diterima (IDLE line detected)};
+    A --> B{Listening untuk frame Modbus};
+    B --> C{Frame diterima };
     C --> D{Validasi ID Slave dan CRC};
-    D --> E{FC05: Write Coil (Ubah LED Slave)};
-    D --> F{FC02: Read Input (Kirim status tombol)};
+    D --> E{FC05: Write Coil };
+    D --> F{FC02: Read Input};
     F --> A{Enable RX DMA ulang};
 ````
 
@@ -263,30 +263,52 @@ IF process_modbus_flag == 1:
 
 ### Diagram Transisi State
 
-```
-                        ┌─ (timeout atau RX ──┐
-                        │  tidak complete)     │
-      ┌─────────────────┴──────────────┐       │
-      │                               │        │
-      ↓                               ↑        │
-   STATE_IDLE ──(timer 100ms)──> STATE_SEND_FC05
-      ▲                               │
-      │                               ↓
-      │                          STATE_WAIT_FC05
-      │                               │
-      └──────(RX complete atau        ↓
-             timeout 50ms)──> STATE_DELAY_FC02
-      ▲                               │
-      │                               ↓
-      └──(timeout 50ms)──> STATE_SEND_FC02 ──────┐
-      │                               │           │
-      │                               ↓           │
-      └────────────── STATE_WAIT_FC02 ◄──────────┘
-                          │
-                          ↓ (RX complete atau
-                          │  timeout 50ms)
-                          │
-                          ├──> Back to STATE_IDLE
+```mermaid
+stateDiagram-v2
+    [*] --> STATE_IDLE
+    
+    STATE_IDLE --> STATE_SEND_FC05: timer 100ms expired
+    
+    STATE_SEND_FC05 --> STATE_WAIT_FC05: Send FC05 frame
+    
+    STATE_WAIT_FC05 --> STATE_DELAY_FC02: RX complete OR<br/>timeout 50ms
+    
+    STATE_DELAY_FC02 --> STATE_SEND_FC02: delay 5ms complete
+    
+    STATE_SEND_FC02 --> STATE_WAIT_FC02: Send FC02 frame
+    
+    STATE_WAIT_FC02 --> STATE_IDLE: RX complete OR<br/>timeout 50ms
+    
+    note right of STATE_IDLE
+        Menunggu interval 100ms
+        sebelum mengirim FC05
+    end note
+    
+    note right of STATE_SEND_FC05
+        Buat & kirim frame FC05
+        (Write Coil - Kontrol LED)
+    end note
+    
+    note right of STATE_WAIT_FC05
+        Tunggu respons Slave
+        Timeout: 50ms
+    end note
+    
+    note right of STATE_DELAY_FC02
+        Jeda aman antar frame
+        Durasi: 5ms
+    end note
+    
+    note right of STATE_SEND_FC02
+        Buat & kirim frame FC02
+        (Read Input - Baca tombol)
+    end note
+    
+    note right of STATE_WAIT_FC02
+        Tunggu respons Slave
+        Timeout: 50ms
+        Kembali ke IDLE jika selesai
+    end note
 ```
 
 ### Penjelasan Setiap State
@@ -438,36 +460,93 @@ arm-none-eabi-gdb Debug/f103cbt6-modbus-slave.elf
 
 ### Wiring Fisik
 
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+ subgraph Master["🔵 MASTER - STM32F103CBT6"]
+        M_MCU["⚙️ STM32F103"]
+        M_PA8["PA8<br>DE/RE"]
+        M_PB10_TX["PB10<br>USART_TX"]
+        M_PB11_RX["PB11<br>USART_RX"]
+        M_LED["🟡 LED<br>PB0<br>470Ω"]
+        M_BTN["🔘 Button<br>PB1<br>Pull-Down"]
+        M_3V3["⚡ 3.3V"]
+        M_GND["GND"]
+  end
+ subgraph MAX485_M["MAX485 Transceiver"]
+        MAX_M_DE["DE"]
+        MAX_M_RE["RE"]
+        MAX_M_DI["DI"]
+        MAX_M_RO["RO"]
+        MAX_M_A["A"]
+        MAX_M_B["B"]
+        MAX_M_GND["GND"]
+  end
+ subgraph RS485_BUS["📡 RS485 BUS"]
+        BUS_A["Line A"]
+        BUS_B["Line B"]
+        BUS_GND["GND"]
+  end
+ subgraph MAX485_S["MAX485 Transceiver"]
+        MAX_S_DE["DE"]
+        MAX_S_RE["RE"]
+        MAX_S_DI["DI"]
+        MAX_S_RO["RO"]
+        MAX_S_A["A"]
+        MAX_S_B["B"]
+        MAX_S_GND["GND"]
+  end
+ subgraph Slave["🔴 SLAVE - STM32F103CBT6"]
+        S_MCU["⚙️ STM32F103"]
+        S_PA8["PA8<br>DE/RE"]
+        S_PB10_TX["PB10<br>USART_TX"]
+        S_PB11_RX["PB11<br>USART_RX"]
+        S_LED["🟡 LED<br>PB0<br>470Ω"]
+        S_BTN["🔘 Button<br>PB1<br>Pull-Down"]
+        S_3V3["⚡ 3.3V"]
+        S_GND["GND"]
+  end
+    M_MCU --> M_PA8 & M_PB10_TX & M_PB11_RX & M_LED & M_BTN & M_3V3 & M_GND
+    S_MCU --> S_PA8 & S_PB10_TX & S_PB11_RX & S_LED & S_BTN & S_3V3 & S_GND
+    M_PA8 -- Control --> MAX_M_DE & MAX_M_RE
+    M_PB10_TX -- TX Data --> MAX_M_DI
+    M_PB11_RX -- RX Data --> MAX_M_RO
+    M_GND --> MAX_M_GND
+    MAX_M_A --> BUS_A
+    MAX_M_B --> BUS_B
+    MAX_M_GND --> BUS_GND
+    BUS_A --> MAX_S_A
+    BUS_B --> MAX_S_B
+    BUS_GND --> MAX_S_GND
+    S_PA8 -- Control --> MAX_S_DE & MAX_S_RE
+    S_PB10_TX -- TX Data --> MAX_S_DI
+    S_PB11_RX -- RX Data --> MAX_S_RO
+    S_GND --> MAX_S_GND
+
+    style Master fill:#e1f5ff
+    style Slave fill:#ffe1e1
+    style MAX485_M fill:#fff9e1
+    style MAX485_S fill:#fff9e1
+    style RS485_BUS fill:#f0f0f0
 ```
-┌─────────────────┐          RS485 BUS          ┌─────────────────┐
-│   MASTER        │                             │     SLAVE       │
-│ (STM32F103)     │                             │ (STM32F103)     │
-│                 │                             │                 │
-│ PA8 (DE/RE) ────┼────────────                 │ PA8 (DE/RE) ────┤
-│                 │           │                 │                 │
-│ PB10 (USART_TX) ┼─→ MAX485  │                 │ PB10 (USART_TX) │
-│                 │           ├─── A ─────────→ ├─→ MAX485        │
-│                 │           │                 │     ├─ A ───┐   │
-│ PB11 (USART_RX) ┼← MAX485   │                 │     │       │   │
-│                 │           ├─── B ─────────→ ├─← MAX485     │   │
-│                 │           │                 │     └─ B ───┤   │
-│ PB11 (USART_RX) ┼← MAX485   │    B     │               │   │
-│                 │           ├────── ─────────→ ├─← MAX485   │   │
-│                 │           │                 │     │───────┘   │
-│ GND             ┼─ MAX485   │                 │ GND            │
-│                 │           ├─── GND ────────→ ┼─ MAX485        │
-│                 │           │                 │                 │
-│ PB0 (LED)      ┼─ 470Ω ─ ─┤                 │ PB0 (LED)       │
-│                 │           ├───┬──────────┐  │     ├───┬──────┐│
-│                 │           │   │ GND  │   │  │     │   │ GND ││
-│                 │           │   └──────┘   │  │     │   └─────┘│
-│                 │           │              │  │     │          │
-│ +3.3V ─────────┬┴─ Button ──┤              │  └─────┴─ Button─ ┤
-│                 │            │              │        ├─ +3.3V  │
-│ GND            ┼────────────┬┘              │ GND ────┘         │
-│                 │            │              │                   │
-└─────────────────┘            └──────────────┴───────────────────┘
-```
+
+**Keterangan Koneksi:**
+
+| Master Pin | Fungsi | Slave Pin | Fungsi |
+|-----------|--------|-----------|--------|
+| PA8 | Control Line (DE/RE) | PA8 | Control Line (DE/RE) |
+| PB10 | UART3_TX → MAX485 DI | PB10 | UART3_TX → MAX485 DI |
+| PB11 | UART3_RX ← MAX485 RO | PB11 | UART3_RX ← MAX485 RO |
+| PB0 | LED Output | PB0 | LED Output |
+| PB1 | Button Input | PB1 | Button Input |
+
+**RS485 Bus (Shared):**
+- **Line A:** Master MAX485_A ↔ Slave MAX485_A
+- **Line B:** Master MAX485_B ↔ Slave MAX485_B
+- **GND:** Master GND ↔ Slave GND
 
 ### Operasi
 
