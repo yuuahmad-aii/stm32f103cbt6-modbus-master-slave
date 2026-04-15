@@ -78,17 +78,14 @@ Master MAX485     Slave MAX485
 
 ### Ringkasan Kerja Master
 
-````
 ```mermaid
-graph TD
+graph TD;
     A[STATE_IDLE (100ms)] --> B{STATE_SEND_FC05 (Write Coil - Kontrol LED Slave)};
     B --> C{STATE_WAIT_FC05 (Tunggu balasan: 50ms timeout)};
     C --> D{STATE_DELAY_FC02 (Jeda 5ms untuk stabilitas)};
     D --> E{STATE_SEND_FC02 (Read Input - Baca tombol Slave)};
     E --> F{STATE_WAIT_FC02 (Tunggu balasan: 50ms timeout)};
     F --> A;
-````
-
 ````
 
 ### Fungsi Utama Master
@@ -174,28 +171,15 @@ Byte 4-5: CRC-16
 
 ### Ringkasan Kerja Slave
 
-```
-┌─────────────────────────────────────────────────────┐
-│           SLAVE MODBUS (EVENT-DRIVEN)               │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│  Listening untuk frame Modbus                      │
-│        ↓                                             │
-│  Frame diterima (IDLE line detected)               │
-│        ↓                                             │
-│  Validasi ID Slave dan CRC                         │
-│        ↓                                             │
-│  ┌── FC05: Write Coil ──┐  ┌── FC02: Read Input ──┐ │
-│  │ Ubah LED Slave      │  │ Kirim status tombol  │ │
-│  │ Echo frame kembali  │  │ Format response      │ │
-│  │                     │  │                      │ │
-│  └─────────────────────┘  └──────────────────────┘ │
-│        ↓                                             │
-│  Enable RX DMA ulang                               │
-│        ↓ (loop kembali listening)                  │
-│                                                     │
-└─────────────────────────────────────────────────────┘
-```
+```mermaid
+graph TD;
+    A[STATE_IDLE (100ms)] --> B{Listening untuk frame Modbus};
+    B --> C{Frame diterima (IDLE line detected)};
+    C --> D{Validasi ID Slave dan CRC};
+    D --> E{FC05: Write Coil (Ubah LED Slave)};
+    D --> F{FC02: Read Input (Kirim status tombol)};
+    F --> A{Enable RX DMA ulang};
+````
 
 ### Fungsi Utama Slave
 
